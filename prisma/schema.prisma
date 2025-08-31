@@ -1,0 +1,536 @@
+// نظام المحاسبة المتكامل - مخطط قاعدة البيانات
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./accounting.db"
+}
+
+// ======== نماذج المصادقة والمستخدمين ========
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  username    String   @unique
+  password    String
+  fullName    String
+  role        UserRole @default(USER)
+  isActive    Boolean  @default(true)
+  branchId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // العلاقات
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  permissions UserPermission[]
+  transactions Transaction[]
+  
+  @@map("users")
+}
+
+model UserPermission {
+  id       String           @id @default(cuid())
+  userId   String
+  module   PermissionModule
+  canView  Boolean          @default(false)
+  canAdd   Boolean          @default(false)
+  canEdit  Boolean          @default(false)
+  canDelete Boolean         @default(false)
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, module])
+  @@map("user_permissions")
+}
+
+// ======== نماذج الشركة والفروع ========
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  arabicName  String
+  taxNumber   String?
+  commercial  String?
+  address     String?
+  phone       String?
+  email       String?
+  logo        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  branches    Branch[]
+  fiscalYears FiscalYear[]
+  
+  @@map("companies")
+}
+
+model Branch {
+  id         String   @id @default(cuid())
+  companyId  String
+  name       String
+  arabicName String
+  address    String?
+  phone      String?
+  manager    String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  company      Company       @relation(fields: [companyId], references: [id])
+  users        User[]
+  warehouses   Warehouse[]
+  customers    Customer[]
+  suppliers    Supplier[]
+  transactions Transaction[]
+  
+  @@map("branches")
+}
+
+// ======== نماذج السنة المالية ========
+
+model FiscalYear {
+  id        String    @id @default(cuid())
+  companyId String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean   @default(false)
+  isClosed  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  company      Company       @relation(fields: [companyId], references: [id])
+  accounts     Account[]
+  transactions Transaction[]
+  
+  @@map("fiscal_years")
+}
+
+// ======== نماذج الحسابات المحاسبية ========
+
+model Account {
+  id            String      @id @default(cuid())
+  fiscalYearId  String
+  code          String
+  name          String
+  arabicName    String
+  accountType   AccountType
+  parentId      String?
+  level         Int         @default(1)
+  isParent      Boolean     @default(false)
+  openingBalance Float      @default(0)
+  currentBalance Float      @default(0)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  fiscalYear      FiscalYear @relation(fields: [fiscalYearId], references: [id])
+  parent          Account?   @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children        Account[]  @relation("AccountHierarchy")
+  debitEntries    JournalEntry[] @relation("DebitAccount")
+  creditEntries   JournalEntry[] @relation("CreditAccount")
+  
+  @@unique([fiscalYearId, code])
+  @@map("accounts")
+}
+
+// ======== نماذج المعاملات المالية ========
+
+model Transaction {
+  id           String            @id @default(cuid())
+  fiscalYearId String
+  branchId     String
+  userId       String
+  number       String
+  date         DateTime
+  description  String
+  reference    String?
+  type         TransactionType
+  status       TransactionStatus @default(PENDING)
+  totalAmount  Float
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  
+  fiscalYear FiscalYear     @relation(fields: [fiscalYearId], references: [id])
+  branch     Branch         @relation(fields: [branchId], references: [id])
+  user       User           @relation(fields: [userId], references: [id])
+  entries    JournalEntry[]
+  
+  @@unique([fiscalYearId, number])
+  @@map("transactions")
+}
+
+model JournalEntry {
+  id            String  @id @default(cuid())
+  transactionId String
+  debitAccountId String?
+  creditAccountId String?
+  amount        Float
+  description   String?
+  
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  debitAccount  Account?    @relation("DebitAccount", fields: [debitAccountId], references: [id])
+  creditAccount Account?    @relation("CreditAccount", fields: [creditAccountId], references: [id])
+  
+  @@map("journal_entries")
+}
+
+// ======== نماذج العملاء والموردين ========
+
+model Customer {
+  id           String   @id @default(cuid())
+  branchId     String
+  code         String
+  name         String
+  arabicName   String
+  type         CustomerType @default(INDIVIDUAL)
+  taxNumber    String?
+  commercial   String?
+  address      String?
+  city         String?
+  phone        String?
+  mobile       String?
+  email        String?
+  creditLimit  Float    @default(0)
+  paymentTerms Int      @default(30)
+  salesRep     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  branch   Branch         @relation(fields: [branchId], references: [id])
+  invoices SalesInvoice[]
+  receipts Receipt[]
+  
+  @@unique([branchId, code])
+  @@map("customers")
+}
+
+model Supplier {
+  id           String   @id @default(cuid())
+  branchId     String
+  code         String
+  name         String
+  arabicName   String
+  type         SupplierType @default(LOCAL)
+  taxNumber    String?
+  commercial   String?
+  address      String?
+  city         String?
+  phone        String?
+  mobile       String?
+  email        String?
+  creditLimit  Float    @default(0)
+  paymentTerms Int      @default(30)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  branch   Branch            @relation(fields: [branchId], references: [id])
+  invoices PurchaseInvoice[]
+  payments Payment[]
+  
+  @@unique([branchId, code])
+  @@map("suppliers")
+}
+
+// ======== نماذج المنتجات والمخزون ========
+
+model Category {
+  id         String    @id @default(cuid())
+  name       String
+  arabicName String
+  parentId   String?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  
+  parent   Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
+  products Product[]
+  
+  @@map("categories")
+}
+
+model Product {
+  id             String      @id @default(cuid())
+  categoryId     String
+  code           String      @unique
+  barcode        String?
+  name           String
+  arabicName     String
+  description    String?
+  unit           String
+  costPrice      Float       @default(0)
+  salePrice      Float       @default(0)
+  minStock       Float       @default(0)
+  hasExpiry      Boolean     @default(false)
+  trackSerial    Boolean     @default(false)
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  
+  category       Category            @relation(fields: [categoryId], references: [id])
+  inventory      InventoryItem[]
+  salesItems     SalesInvoiceItem[]
+  purchaseItems  PurchaseInvoiceItem[]
+  
+  @@map("products")
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  branchId  String
+  code      String
+  name      String
+  address   String?
+  manager   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  branch    Branch          @relation(fields: [branchId], references: [id])
+  inventory InventoryItem[]
+  
+  @@unique([branchId, code])
+  @@map("warehouses")
+}
+
+model InventoryItem {
+  id          String    @id @default(cuid())
+  warehouseId String
+  productId   String
+  quantity    Float     @default(0)
+  reservedQty Float     @default(0)
+  avgCost     Float     @default(0)
+  lastCost    Float     @default(0)
+  expiryDate  DateTime?
+  batchNo     String?
+  serialNo    String?
+  updatedAt   DateTime  @updatedAt
+  
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+  
+  @@unique([warehouseId, productId, batchNo, serialNo])
+  @@map("inventory_items")
+}
+
+// ======== نماذج المبيعات ========
+
+model SalesInvoice {
+  id           String      @id @default(cuid())
+  customerId   String
+  number       String
+  date         DateTime
+  dueDate      DateTime?
+  reference    String?
+  notes        String?
+  subtotal     Float
+  taxAmount    Float       @default(0)
+  discountAmount Float     @default(0)
+  totalAmount  Float
+  paidAmount   Float       @default(0)
+  status       InvoiceStatus @default(DRAFT)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  customer Customer           @relation(fields: [customerId], references: [id])
+  items    SalesInvoiceItem[]
+  receipts Receipt[]
+  
+  @@unique([number])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceItem {
+  id        String  @id @default(cuid())
+  invoiceId String
+  productId String
+  quantity  Float
+  unitPrice Float
+  discount  Float   @default(0)
+  total     Float
+  
+  invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id])
+  
+  @@map("sales_invoice_items")
+}
+
+model Receipt {
+  id         String        @id @default(cuid())
+  customerId String
+  invoiceId  String?
+  number     String
+  date       DateTime
+  amount     Float
+  method     PaymentMethod
+  reference  String?
+  notes      String?
+  createdAt  DateTime      @default(now())
+  
+  customer Customer      @relation(fields: [customerId], references: [id])
+  invoice  SalesInvoice? @relation(fields: [invoiceId], references: [id])
+  
+  @@unique([number])
+  @@map("receipts")
+}
+
+// ======== نماذج المشتريات ========
+
+model PurchaseInvoice {
+  id           String      @id @default(cuid())
+  supplierId   String
+  number       String
+  date         DateTime
+  dueDate      DateTime?
+  reference    String?
+  notes        String?
+  subtotal     Float
+  taxAmount    Float       @default(0)
+  discountAmount Float     @default(0)
+  totalAmount  Float
+  paidAmount   Float       @default(0)
+  status       InvoiceStatus @default(DRAFT)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  supplier Supplier             @relation(fields: [supplierId], references: [id])
+  items    PurchaseInvoiceItem[]
+  payments Payment[]
+  
+  @@unique([number])
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceItem {
+  id        String  @id @default(cuid())
+  invoiceId String
+  productId String
+  quantity  Float
+  unitPrice Float
+  discount  Float   @default(0)
+  total     Float
+  
+  invoice PurchaseInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  
+  @@map("purchase_invoice_items")
+}
+
+model Payment {
+  id         String        @id @default(cuid())
+  supplierId String
+  invoiceId  String?
+  number     String
+  date       DateTime
+  amount     Float
+  method     PaymentMethod
+  reference  String?
+  notes      String?
+  createdAt  DateTime      @default(now())
+  
+  supplier Supplier         @relation(fields: [supplierId], references: [id])
+  invoice  PurchaseInvoice? @relation(fields: [invoiceId], references: [id])
+  
+  @@unique([number])
+  @@map("payments")
+}
+
+// ======== التصنيع وخطوط الإنتاج ========
+
+model ProductionOrder {
+  id          String    @id @default(cuid())
+  number      String    @unique
+  productId   String
+  quantity    Float
+  startDate   DateTime?
+  endDate     DateTime?
+  status      ProductionStatus @default(PLANNED)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@map("production_orders")
+}
+
+// ======== التعدادات (Enums) ========
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  ACCOUNTANT
+  USER
+}
+
+enum PermissionModule {
+  ACCOUNTS
+  TRANSACTIONS
+  CUSTOMERS
+  SUPPLIERS
+  PRODUCTS
+  INVENTORY
+  SALES
+  PURCHASES
+  REPORTS
+  SETTINGS
+}
+
+enum AccountType {
+  ASSETS          // الأصول
+  LIABILITIES     // الخصوم
+  EQUITY          // حقوق الملكية
+  REVENUE         // الإيرادات
+  EXPENSES        // المصروفات
+}
+
+enum TransactionType {
+  JOURNAL         // قيد يومي
+  RECEIPT         // سند قبض
+  PAYMENT         // سند صرف
+  OPENING         // قيد افتتاحي
+  CLOSING         // قيد إقفال
+}
+
+enum TransactionStatus {
+  PENDING         // معلق
+  POSTED          // مرحل
+  CANCELLED       // ملغي
+}
+
+enum CustomerType {
+  INDIVIDUAL      // فرد
+  COMPANY         // شركة
+}
+
+enum SupplierType {
+  LOCAL           // محلي
+  FOREIGN         // أجنبي
+}
+
+enum InvoiceStatus {
+  DRAFT           // مسودة
+  SENT            // مرسلة
+  PAID            // مدفوعة
+  OVERDUE         // متأخرة
+  CANCELLED       // ملغية
+}
+
+enum PaymentMethod {
+  CASH            // نقد
+  BANK            // بنك
+  CHECK           // شيك
+  CARD            // بطاقة
+  TRANSFER        // تحويل
+}
+
+enum ProductionStatus {
+  PLANNED         // مخطط
+  IN_PROGRESS     // قيد التنفيذ
+  COMPLETED       // مكتمل
+  CANCELLED       // ملغي
+}
